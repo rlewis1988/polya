@@ -41,6 +41,7 @@
 import polya.main.terms as terms
 import polya.main.messages as messages
 import polya.util.geometry as geometry
+import polya.main.proofs as proofs
 import polya.util.mul_util as mul_util
 
 
@@ -403,7 +404,7 @@ class Blackboard(object):
         if not isinstance(term1, terms.IVar) or not isinstance(term2, terms.IVar):
             ivar1 = term1 if isinstance(term1, terms.IVar) else self.term_name(term1)
             ivar2 = term2 if isinstance(term2, terms.IVar) else self.term_name(term2)
-            c = terms.TermComparison(ivar1, comp, coeff * ivar2).canonize()
+            c = terms.TermComparison(ivar1, comp, coeff * ivar2, c.source).canonize()
             term1, comp, coeff, term2 = c.term1, c.comp, c.term2.coeff, c.term2.term
             if coeff == 0:
                 term2 = terms.IVar(0)
@@ -411,13 +412,15 @@ class Blackboard(object):
         if self.implies(term1.index, comp, coeff, term2.index):
             return
         elif self.implies(term1.index, terms.comp_negate(comp), coeff, term2.index):
+            print 'contradiction. trace:'
+            print c.trace()
             self.raise_contradiction(term1.index, comp, coeff, term2.index)
 
         if comp in (terms.GE, terms.GT, terms.LE, terms.LT):
             if coeff == 0:
                 self.assert_zero_inequality(term1.index, comp)
             else:
-                self.assert_inequality(term1.index, comp, coeff, term2.index)
+                self.assert_inequality(term1.index, comp, coeff, term2.index, c.source)
         elif comp == terms.EQ:
             if coeff == 0:
                 self.assert_zero_equality(term1.index)
@@ -450,7 +453,7 @@ class Blackboard(object):
         """
         self.add(*comparisons)
 
-    def assert_inequality(self, i, comp, coeff, j):
+    def assert_inequality(self, i, comp, coeff, j, source=proofs.unknown):
         """
         Adds the inequality "ti comp coeff * tj".
         This should never be called directly; rather, assert_comparison should be used.
@@ -459,7 +462,7 @@ class Blackboard(object):
         self.tracker.update((i, j))
 
         old_comps = self.inequalities.get((i, j), [])
-        new_comp = geometry.halfplane_of_comp(comp, coeff)
+        new_comp = geometry.halfplane_of_comp(comp, coeff, source)
 
         if i == 0 and comp in [terms.LE, terms.LT]:
             if coeff > 0:

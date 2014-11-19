@@ -1,5 +1,6 @@
 import polya.main.terms as terms
 import polya.util.num_util as num_util
+import polya.main.proofs as proofs
 import fractions
 import math
 
@@ -188,9 +189,11 @@ def make_term_comparison_abs(c, B):
     if c.term2.coeff == 0:
         if isinstance(c.term1, terms.STerm):
             comp = c.comp if c.term1.coeff > 0 else terms.comp_reverse(c.comp)
-            return terms.comp_eval[comp](c.term1.term, 0)
+            r = terms.comp_eval[comp](c.term1.term, 0)
         else:
-            return terms.comp_eval[c.comp](c.term1, 0)
+            r = terms.comp_eval[c.comp](c.term1, 0)
+        r.source = proofs.Proof("absolute value of", [c])
+        return r
 
     if isinstance(c.term1, terms.Term):
         term1, comp, coeff, term2 = c.term1, c.comp, c.term2.coeff, c.term2.term
@@ -206,9 +209,11 @@ def make_term_comparison_abs(c, B):
     # we have term1 comp coeff * term2
     coeff1 = coeff * B.sign(i) * B.sign(j)
     if B.sign(i) == 1:
-        return terms.comp_eval[comp](term1, coeff1 * term2)
+        r = terms.comp_eval[comp](term1, coeff1 * term2)
     else:
-        return terms.comp_eval[terms.comp_reverse(comp)](term1, coeff1 * term2)
+        r = terms.comp_eval[terms.comp_reverse(comp)](term1, coeff1 * term2)
+    r.source = proofs.Proof("absolute value of", [c])
+    return r
 
 
 def make_term_comparison_unabs(i, j, ei, ej, comp1, coeff1, B):
@@ -249,7 +254,8 @@ def get_multiplicative_information(B):
         if (isinstance(B.term_defs[key], terms.MulTerm) and B.sign(key) != 0 and
                 all(B.sign(p.term.index) != 0 for p in B.term_defs[key].args)):
             comparisons.append(
-                terms.TermComparison(reduce_mul_term(B.term_defs[key]), terms.EQ, terms.IVar(key))
+                terms.TermComparison(reduce_mul_term(B.term_defs[key]), terms.EQ, terms.IVar(key),
+                                     proofs.Proof('definition of t{0}'.format(key), []))
             )
 
     return comparisons

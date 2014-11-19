@@ -52,6 +52,8 @@
 
 import fractions
 import numbers
+import proofs
+import asciitree
 
 
 class Error(Exception):
@@ -823,7 +825,7 @@ comp_eval = {GT: lambda x, y: x > y, GE: lambda x, y: x >= y, EQ: lambda x, y: x
 
 class TermComparison(object):
 
-    def __init__(self, term1, comp, term2):
+    def __init__(self, term1, comp, term2, source=proofs.unknown):
         if isinstance(term1, numbers.Rational):
             self.term1 = STerm(term1, one)
         else:
@@ -834,6 +836,7 @@ class TermComparison(object):
             self.term2 = term2
         self.comp = comp
         self.key = (self.term1.key, comp, self.term2.key)
+        self.source = source
 
     def __str__(self):
         return '{0!s} {1} {2!s}'.format(self.term1, comp_str[self.comp], self.term2)
@@ -849,6 +852,9 @@ class TermComparison(object):
             return False
         else:
             return self.key == other.key
+            
+    def trace(self):  
+        return asciitree.draw_tree(self, lambda n: n.source.parents, lambda n: str(n) + ",  from "+ n.source.reason)
 
     def canonize(self):
         """
@@ -874,7 +880,7 @@ class TermComparison(object):
         if t1.coeff < 0:
             comp = comp_reverse(comp)
 
-        return TermComparison(t1.term, comp, t2 / t1.coeff)
+        return TermComparison(t1.term, comp, t2 / t1.coeff, self.source)
 
 
 ####################################################################################################

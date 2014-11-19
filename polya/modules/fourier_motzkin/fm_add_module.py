@@ -24,6 +24,7 @@
 import polya.main.terms as terms
 import polya.main.messages as messages
 import polya.util.timer as timer
+import polya.main.proofs as proofs
 import fractions
 
 
@@ -89,15 +90,23 @@ class Sum():
         """
         return v in (a.index for a in self.args)
 
+class ZeroEquality():
+    def __init__(self, term, source=proofs.unknown):
+        self.term = term
+        self.source = source
+
+    def __str__(self):
+        return "{0!s} = 0".format(self.term)
 
 class ZeroComparison():
     """
     Stores a comparison s > 0 (strong) or s >= 0 (weak).
     """
 
-    def __init__(self, term, strong):
+    def __init__(self, term, strong, source=proofs.unknown):
         self.term = term
         self.strong = strong
+        self.source = source
 
     def __str__(self):
         if self.strong:
@@ -145,7 +154,7 @@ def trivial_eq(e):
     Assumes e is a Sum.
     Determine whether e == 0 is the trivial equality 0 == 0
     """
-    return len(e.args) == 0
+    return len(e.term.args) == 0
 
 
 def trivial_ineq(c):
@@ -162,14 +171,16 @@ def elim_eq_eq(t1, t2, v):
     Solves for v in t2 = 0 and substitutes the result in t1.
     """
     try:
-        s1 = next(s for s in t1.args if s.index == v)
+        s1 = next(s for s in t1.term.args if s.index == v)
     except StopIteration:
         return t1
     try:
-        s2 = next(s for s in t2.args if s.index == v)
+        s2 = next(s for s in t2.term.args if s.index == v)
     except StopIteration:
         raise Error('elim_eq_eq: IVar t{0!s} does not occur in {1!s}'.format(v, t2))
-    return t1 + (- s1.coeff / s2.coeff) * t2
+    ret = t1.term + (- s1.coeff / s2.coeff) * t2.term
+
+    return ZeroEquality(ret, proofs.Proof(proofs.fmadd, [t1, t2]))
 
 
 def elim_ineq_eq(c, t, v):
@@ -177,8 +188,8 @@ def elim_ineq_eq(c, t, v):
     Takes a zero comparison c, an additive term t, and a variable, v.
     Solves for v in t = 0 and substitutes the result in c.
     """
-    t1 = elim_eq_eq(c.term, t, v)
-    return ZeroComparison(t1, c.strong)
+    t1 = elim_eq_eq(ZeroEquality(c.term, proofs.unknown), t, v)
+    return ZeroComparison(t1.term, c.strong, proofs.Proof(proofs.fmadd, [c, t]))
 
 
 def elim_ineq_ineq(c1, c2, v):
@@ -196,7 +207,7 @@ def elim_ineq_ineq(c1, c2, v):
     r = - (s1.coeff / s2.coeff)
     if r < 0:
         raise Error('ineq_ineq_elim: coefficients of {0!s} have the same sign'.format(v))
-    return ZeroComparison(t1 + r * t2, c1.strong or c2.strong)
+    return ZeroComparison(t1 + r * t2, c1.strong or c2.strong, proofs.Proof(proofs.fmadd, [c1, c2]))
 
 
 def elim(zero_equations, zero_comparisons, v):
@@ -210,12 +221,12 @@ def elim(zero_equations, zero_comparisons, v):
     # If one of the equations contains v, take the shortest such one and use that to eliminate v
     short = None
     for e in zero_equations:
-        if e.contains(v) and (not short or len(e.args) < len(short.args)):
+        if e.term.contains(v) and (not short or len(e.term.args) < len(short.term.args)):
             short = e
     if short:
         new_equations, new_comparisons = [], []
         for e in zero_equations:
-            if e != short:
+            if e.term != short.term:
                 e1 = elim_eq_eq(e, short, v)
                 if not trivial_eq(e1):
                     new_equations.append(e1)
@@ -250,7 +261,7 @@ def equality_to_zero_equality(c):
     """
     Converts an equality to an equation t = 0, with t a Sum.
     """
-    return cast_to_sum(c.term1 - c.term2)
+    return ZeroEquality(cast_to_sum(c.term1 - c.term2), c.source)
 
 
 def inequality_to_zero_comparison(c):
@@ -262,7 +273,7 @@ def inequality_to_zero_comparison(c):
     else:
         term = c.term2 - c.term1
     strong = (c.comp == terms.GT) or (c.comp == terms.LT)
-    return ZeroComparison(cast_to_sum(term), strong)
+    return ZeroComparison(cast_to_sum(term), strong, proofs.Proof('arithmetic', [c]))
 
 
 def get_additive_information(B):
@@ -274,7 +285,8 @@ def get_additive_information(B):
     # convert each definition ti = s0 + s1 + ... + sn to a zero equality
     for i in range(B.num_terms):
         if isinstance(B.term_defs[i], terms.AddTerm):
-            zero_equalities.append(cast_to_sum(terms.IVar(i) - B.term_defs[i]))
+            zero_equalities.append(ZeroEquality(cast_to_sum(terms.IVar(i) - B.term_defs[i]),
+                                                proofs.Proof('definition',[])))
     return zero_equalities, zero_comparisons
 
 
@@ -286,11 +298,15 @@ def zero_equality_to_comparison(e):
     l = len(e.args)
     if l == 1:
         t = summand_to_sterm(e.args[0])
-        return t == 0
+        r = t == 0
+        r.source = e.source
+        return r
     elif l == 2:
         t1 = summand_to_sterm(e.args[0])
         t2 = summand_to_sterm(e.args[1])
-        return t1 == -t2
+        r = t1 == -t2
+        r.source = e.source
+        return r
     else:
         return None
 
@@ -307,11 +323,15 @@ def zero_comparison_to_comparison(c):
         return terms.IVar(0) < 0   # TODO: is the a better way of returning a contradiction?
     if l == 1:
         t = summand_to_sterm(s.args[0])
-        return t > 0 if c.strong else t >= 0
+        r = t > 0 if c.strong else t >= 0
+        r.source = c.source
+        return r
     elif l == 2:
         t1 = summand_to_sterm(s.args[0])
         t2 = summand_to_sterm(s.args[1])
-        return t1 > - t2 if c.strong else t1 >= -t2
+        r = t1 > - t2 if c.strong else t1 >= -t2
+        r.source = c.source
+        return r
     else:
         return None
 

@@ -21,7 +21,7 @@ import polya.main.messages as messages
 import polya.util.mul_util as mul_util
 import polya.util.timer as timer
 import fractions
-
+import polya.main.proofs as proofs
 
 class Error(Exception):
     pass
@@ -94,15 +94,23 @@ class Product():
         """
         return v in (a.index for a in self.args)
 
+class OneEquality():
+    def __init__(self, term, source=proofs.unknown):
+        self.term = term
+        self.source = source
+        
+    def __str__(self):
+        return "{0!s} = 1".format(self.term)
 
 class OneComparison():
     """
     Stores a comparison s > 1 (strong) or s >= 1 (weak).
     """
 
-    def __init__(self, term, strong):
+    def __init__(self, term, strong, source=proofs.unknown):
         self.term = term
         self.strong = strong
+        self.source = source
 
     def __str__(self):
         if self.strong:
@@ -144,7 +152,7 @@ def trivial_eq(e):
     Assumes e is a Product.
     Determine whether e == 1 is the trivial equality 1 == 1
     """
-    return e.coeff == 1 and len(e.args) == 0
+    return e.term.coeff == 1 and len(e.term.args) == 0
 
 
 def trivial_ineq(c):
@@ -161,17 +169,17 @@ def elim_eq_eq(t1, t2, v):
     Uses t2 = 1 to eliminate v from t1 = 1, raising t1 to a positive power.
     """
     try:
-        m1 = next(m for m in t1.args if m.index == v)
+        m1 = next(m for m in t1.term.args if m.index == v)
     except StopIteration:
         return t1
     try:
-        m2 = next(m for m in t2.args if m.index == v)
+        m2 = next(m for m in t2.term.args if m.index == v)
     except StopIteration:
         raise Error('elim_eq_eq: IVar t{0!s} does not occur in {1!s}'.format(v, t2))
     exp1, exp2 = m1.exp, m2.exp
     scale1 = abs(exp2 / fractions.gcd(exp1, exp2))
     scale2 = -(exp1 * scale1) / exp2
-    return t1 ** scale1 * t2 ** scale2
+    return OneEquality(t1.term ** scale1 * t2.term ** scale2, proofs.Proof(proofs.fmmul, [t1, t2]))
 
 
 def elim_ineq_eq(c, t, v):
@@ -179,10 +187,10 @@ def elim_ineq_eq(c, t, v):
     Takes a OneComparison c, a Product t, and a variable, v.
     Uses t = 1 to eliminate v from c.
     """
-    t1 = elim_eq_eq(c.term, t, v)
+    t1 = elim_eq_eq(OneEquality(c.term), t, v).term
     # TODO: for debugging, remove
     # result = OneComparison(t1, c.strong)
-    return OneComparison(t1, c.strong)
+    return OneComparison(t1, c.strong, proofs.Proof(proofs.fmmul, [c, t]))
 
 
 def elim_ineq_ineq(c1, c2, v):
@@ -202,7 +210,7 @@ def elim_ineq_ineq(c1, c2, v):
     scale2 = -(exp1 * scale1) / exp2
     if scale2 < 0:
         raise Error('ineq_ineq_elim: exponents of {0!s} have the same sign'.format(v))
-    return OneComparison(t1 ** scale1 * t2 ** scale2, c1.strong or c2.strong)
+    return OneComparison(t1 ** scale1 * t2 ** scale2, c1.strong or c2.strong, proofs.Proof(proofs.fmmul, [c1, c2]))
 
 
 def elim(one_equations, one_comparisons, v):
@@ -216,7 +224,7 @@ def elim(one_equations, one_comparisons, v):
     # If one of the equations contains v, take the shortest such one and use that to eliminate v
     short = None
     for e in one_equations:
-        if e.contains(v) and (not short or len(e.args) < len(short.args)):
+        if e.term.contains(v) and (not short or len(e.term.args) < len(short.term.args)):
             short = e
     if short:
         new_equations, new_comparisons = [], []
@@ -254,21 +262,21 @@ def elim(one_equations, one_comparisons, v):
 
 def equality_to_one_equality(c):
     """
-    Converts an equality to an equation t = 0, with t a Product.
+    Converts an equality to an equation t = 1, with t a Product.
     """
-    return cast_to_product(c.term1 / c.term2)
+    return OneEquality(cast_to_product(c.term1 / c.term2), proofs.Proof('arithmetic', [c]))
 
 
 def inequality_to_one_comparison(c):
     """
-    Converts an inequality to a ZeroComparison t > 0 or t >= 0, with t an AddTerm.
+    Converts an inequality to a ZeroComparison t > 1 or t >= 1, with t an AddTerm.
     """
     if (c.comp == terms.GE) or (c.comp == terms.GT):
         term = c.term1 / c.term2
     else:
         term = c.term2 / c.term1
     strong = (c.comp == terms.GT) or (c.comp == terms.LT)
-    return OneComparison(cast_to_product(term), strong)
+    return OneComparison(cast_to_product(term), strong, proofs.Proof('arithmetic', [c]))
 
 
 def get_multiplicative_information(B):
@@ -294,11 +302,15 @@ def one_equality_to_comparison(e, B):
     l = len(e.args)
     if l == 1:
         m = multiplicand_to_mulpair(e.args[0])
-        return mul_util.process_mul_comp(m, mulpair_one, e.coeff, terms.EQ, B)
+        c = mul_util.process_mul_comp(m, mulpair_one, e.coeff, terms.EQ, B)
+        c.source = e.source
+        return c
     elif l == 2:
         m1 = multiplicand_to_mulpair(e.args[0])
         m2 = multiplicand_to_mulpair(e.args[1])
-        return mul_util.process_mul_comp(m1, m2, e.coeff, terms.EQ, B)
+        c = mul_util.process_mul_comp(m1, m2, e.coeff, terms.EQ, B)
+        c.source = e.source
+        return c
     else:
         return None
 
@@ -314,7 +326,7 @@ def one_comparison_to_comparison(c, B):
     if l == 0:
         #print c
         #return mul_util.process_mul_comp(mulpair_one, mulpair_one, p.coeff, comp, B)
-        return terms.comp_eval[comp](
+        r = terms.comp_eval[comp](
             terms.IVar(0),
             mul_util.round_coeff(fractions.Fraction(1, p.coeff), comp) * terms.IVar(0)
         )
@@ -324,14 +336,17 @@ def one_comparison_to_comparison(c, B):
 #        return None
     if l == 1:
         m = multiplicand_to_mulpair(p.args[0])
-        return mul_util.process_mul_comp(m, mulpair_one, p.coeff, comp, B)
+        r = mul_util.process_mul_comp(m, mulpair_one, p.coeff, comp, B)
 #        return None
     elif l == 2:
         m1 = multiplicand_to_mulpair(p.args[0])
         m2 = multiplicand_to_mulpair(p.args[1])
-        return mul_util.process_mul_comp(m1, m2, p.coeff, comp, B)
+        r = mul_util.process_mul_comp(m1, m2, p.coeff, comp, B)
     else:
-        return None
+        r = None
+    if r:
+        r.source = c.source
+    return r
 
 
 def assert_comparisons_to_blackboard(one_equalities, one_comparisons, B):

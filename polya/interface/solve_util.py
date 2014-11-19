@@ -26,6 +26,7 @@ import polya.main.formulas as formulas
 import polya.main.messages as messages
 import polya.main.blackboard as blackboard
 import polya.main.terms as terms
+import polya.main.proofs as proofs
 import run_util
 
 
@@ -103,6 +104,9 @@ class Solver:
             self.fm.add_axioms(axioms)
 
         self.contradiction = False
+        for a in assertions:
+            if a.source == proofs.unknown:
+                a.source = proofs.Proof('assumption', [])
         self.assume(*assertions)
         self.assume(*terms)
         self.modules = modules
@@ -151,6 +155,8 @@ class Solver:
         """
         Adds a single comparison to the Solver's blackboard.
         """
+        if c.source == proofs.unknown:
+            c.source = proofs.Proof('assumption', [])
         try:
             self.B.assert_comparison(c)
         except terms.Contradiction as e:
@@ -167,6 +173,11 @@ class Solver:
             elif isinstance(item, (terms.Term, terms.STerm)):
                 self.add_term(item)
             else:
+                if item.source == proofs.unknown:
+                    print '!'
+                    item.source = proofs.Proof('assumption', [])
+                else:
+                    print item.source
                 try:
                     self.B.add(item)
                 except terms.Contradiction as e:

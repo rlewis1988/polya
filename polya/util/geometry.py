@@ -18,6 +18,7 @@
 
 #from ..main import terms
 import polya.main.terms as terms
+import polya.main.proofs as proofs
 import fractions
 
 
@@ -147,8 +148,9 @@ class Halfplane:
     If strong is true, the line bx - ay = 0 is not included in the halfplane.
     """
 
-    def __init__(self, a, b, strong):
+    def __init__(self, a, b, strong, source=proofs.unknown):
         self.a, self.b, self.strong = a, b, strong
+        self.source = source
 
     def __str__(self):
         return "({0}, {1}), {2}".format(self.a, self.b, "strong" if self.strong else "weak")
@@ -203,41 +205,43 @@ class Halfplane:
     def to_comp(self, t1, t2):
         if self.a == 0:  # vertical
             if self.contains_point(1, 0):
-                return t1 > 0 if self.strong else t1 >= 0
+                r = t1 > 0 if self.strong else t1 >= 0
             else:
-                return t1 < 0 if self.strong else t1 <= 0
+                r = t1 < 0 if self.strong else t1 <= 0
 
         elif self.b == 0:  # horizontal
             if self.contains_point(0, 1):
-                return t2 > 0 if self.strong else t2 >= 0
+                r = t2 > 0 if self.strong else t2 >= 0
             else:
-                return t2 < 0 if self.strong else t2 <= 0
+                r = t2 < 0 if self.strong else t2 <= 0
         else:
             # p = (-self.b, self.a)  # p is pi/2 ccw of self
             if -self.b > fractions.Fraction(self.a * self.a, self.b):
                 comp = terms.GT if self.strong else terms.GE
             else:
                 comp = terms.LT if self.strong else terms.LE
-            return terms.comp_eval[comp](t1, fractions.Fraction(self.a, self.b) * t2)
+            r = terms.comp_eval[comp](t1, fractions.Fraction(self.a, self.b) * t2)
+        r.source = self.source
+        return r
 
 
-def halfplane_of_comp(comp, coeff):
+def halfplane_of_comp(comp, coeff, source=proofs.unknown):
     """
     Returns a halfplane object representing the inequality x comp coeff * y
     Assumes comp is LT, LE, GE, or GT
     """
     if coeff == 0:
         if comp in [terms.GT, terms.GE]:
-            return Halfplane(0, -1, (True if comp == terms.GT else False))
+            return Halfplane(0, -1, (True if comp == terms.GT else False), source)
         else:
-            return Halfplane(0, 1, (True if comp == terms.LT else False))
+            return Halfplane(0, 1, (True if comp == terms.LT else False), source)
 
     normal = (1, -coeff) if terms.comp_eval[comp](1, -coeff * coeff) else (-1, coeff)
-    hp = Halfplane(coeff, 1, (True if comp in [terms.GT, terms.LT] else False))
+    hp = Halfplane(coeff, 1, (True if comp in [terms.GT, terms.LT] else False), source)
     if hp.contains_point(*normal):
         return hp
     else:
-        return Halfplane(-coeff, -1, (True if comp in [terms.GT, terms.LT] else False))
+        return Halfplane(-coeff, -1, (True if comp in [terms.GT, terms.LT] else False), source)
 
 
 def add_halfplane_comparison(hp, hp_list):
@@ -274,7 +278,7 @@ def halfplane_flip(hp):
     """
     Converts a comparison between ti and tj into a comparison between tj and ti
     """
-    return Halfplane(-hp.b, -hp.a, hp.strong)
+    return Halfplane(-hp.b, -hp.a, hp.strong, hp.source)
 
 
 ####################################################################################################
