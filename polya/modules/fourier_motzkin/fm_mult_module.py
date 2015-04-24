@@ -299,16 +299,16 @@ def one_equality_to_comparison(e, B):
     Converts an equation e == 0 to a blackboard comparison between IVars, or None if
     the equation is not of that form. Restores sign information from the Blackboard.
     """
-    l = len(e.args)
+    l = len(e.term.args)
     if l == 1:
-        m = multiplicand_to_mulpair(e.args[0])
-        c = mul_util.process_mul_comp(m, mulpair_one, e.coeff, terms.EQ, B)
+        m = multiplicand_to_mulpair(e.term.args[0])
+        c = mul_util.process_mul_comp(m, mulpair_one, e.term.coeff, terms.EQ, B)
         c.source = e.source
         return c
     elif l == 2:
-        m1 = multiplicand_to_mulpair(e.args[0])
-        m2 = multiplicand_to_mulpair(e.args[1])
-        c = mul_util.process_mul_comp(m1, m2, e.coeff, terms.EQ, B)
+        m1 = multiplicand_to_mulpair(e.term.args[0])
+        m2 = multiplicand_to_mulpair(e.term.args[1])
+        c = mul_util.process_mul_comp(m1, m2, e.term.coeff, terms.EQ, B)
         c.source = e.source
         return c
     else:

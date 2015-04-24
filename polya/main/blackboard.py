@@ -108,7 +108,7 @@ class Blackboard(object):
         # comparisons between named subterms
         self.inequalities = {}  # Dictionary mapping (i, j) to a list of Halfplanes [h1, h2],
                                 # such that h2 is cw of h1
-        self.zero_inequalities = {0: terms.GT}  # Dictionary mapping i to comp
+        self.zero_inequalities = {0: (terms.GT, proofs.Proof('Atom', []))}  # Dictionary mapping i to comp
         self.equalities = {}  # Dictionary mapping (i, j) to coeff
         self.zero_equalities = set([])  # Set of IVar indices equal to 0
         self.disequalities = {}  # Dictionary mapping (i, j) to a set of coeffs
@@ -175,7 +175,7 @@ class Blackboard(object):
             if messages.visible(messages.DEF_FULL):
                 messages.announce_strong('  := {1!s}'.format(i, t))
             for j in self.zero_inequalities:
-                hp = geometry.halfplane_of_comp(self.zero_inequalities[j], 0)
+                hp = geometry.halfplane_of_comp(self.zero_inequalities[j][0], 0)
                 self.inequalities[j, i] = [hp]
             return terms.IVar(i)
 
@@ -213,7 +213,7 @@ class Blackboard(object):
         """
         inequalities = []
         for i in self.zero_inequalities:
-            comp = self.zero_inequalities[i]
+            comp = self.zero_inequalities[i][0]
             inequalities.append(terms.comp_eval[comp](terms.IVar(i), 0))
         for (i, j) in self.inequalities:
             for hp in self.inequalities[i, j]:
@@ -308,7 +308,7 @@ class Blackboard(object):
             elif j in self.zero_equalities:
                 if i not in self.zero_inequalities:
                     return False
-                comp1 = self.zero_inequalities[i]
+                comp1 = self.zero_inequalities[i][0]
                 return ((comp1 == comp)
                         or (comp1 == terms.GT and comp == terms.GE)
                         or (comp1 == terms.LT and comp == terms.LE))
@@ -355,14 +355,14 @@ class Blackboard(object):
             return comp in [terms.LE, terms.GE, terms.EQ]
 
         if comp in [terms.LT, terms.GT]:
-            return self.zero_inequalities.get(i, terms.EQ) == comp
+            return self.zero_inequalities.get(i, (terms.EQ, 0))[0] == comp
 
         elif comp == terms.LE:
-            return self.zero_inequalities.get(i, terms.EQ) in [terms.LE, terms.LT] \
+            return self.zero_inequalities.get(i, (terms.EQ, 0))[0] in [terms.LE, terms.LT] \
                 or self.implies_zero_comparison(i, terms.EQ)
 
         elif comp == terms.GE:
-            return self.zero_inequalities.get(i, terms.EQ) in [terms.GE, terms.GT] \
+            return self.zero_inequalities.get(i, (terms.EQ, 0))[0] in [terms.GE, terms.GT] \
                 or self.implies_zero_comparison(i, terms.EQ)
 
         elif comp == terms.EQ:
@@ -371,7 +371,7 @@ class Blackboard(object):
         elif comp == terms.NE:
             if i in self.zero_disequalities:
                 return True
-            if i in self.zero_inequalities and self.zero_inequalities[i] in [terms.LT, terms.GT]:
+            if i in self.zero_inequalities and self.zero_inequalities[i][0] in [terms.LT, terms.GT]:
                 return True
             return False
 
@@ -418,19 +418,19 @@ class Blackboard(object):
 
         if comp in (terms.GE, terms.GT, terms.LE, terms.LT):
             if coeff == 0:
-                self.assert_zero_inequality(term1.index, comp)
+                self.assert_zero_inequality(term1.index, comp, c.source)
             else:
                 self.assert_inequality(term1.index, comp, coeff, term2.index, c.source)
         elif comp == terms.EQ:
             if coeff == 0:
-                self.assert_zero_equality(term1.index)
+                self.assert_zero_equality(term1.index, c.source)
             else:
-                self.assert_equality(term1.index, coeff, term2.index)
+                self.assert_equality(term1.index, coeff, term2.index, c.source)
         elif comp == terms.NE:
             if coeff == 0:
-                self.assert_zero_disequality(term1.index)
+                self.assert_zero_disequality(term1.index, c.source)
             else:
-                self.assert_disequality(term1.index, coeff, term2.index)
+                self.assert_disequality(term1.index, coeff, term2.index, c.source)
         else:
             raise Error('Unrecognized comparison: {0!s}'.format())
 
@@ -546,15 +546,15 @@ class Blackboard(object):
 
         self.update_clause(i, j)
 
-    def assert_zero_inequality(self, i, comp):
+    def assert_zero_inequality(self, i, comp, source=proofs.unknown):
         """
         Adds the inequality "ti comp 0".
         This should never be called directly; rather, assert_comparison should be used.
         """
-        if i in self.zero_disequalities:
+        if i in [d for d in self.zero_disequalities]: # d[0]
             c = terms.GT if comp in [terms.GE, terms.GT] else terms.LT
             self.zero_disequalities.remove(i)
-            des = set(k for k in self.disequalities.get((0, i), set())
+            des = set(k for k in self.disequalities.get((0, i), set()) # k[0]
                       if not terms.comp_eval[c](k, 0))
             if len(des) > 0:
                 self.disequalities[0, i] = des
@@ -564,22 +564,26 @@ class Blackboard(object):
 
         if i in self.zero_inequalities:
             # We know that the new info is new and noncontradictory.
-            if self.zero_inequalities[i] in [terms.LE, terms.GE] and comp in [terms.LE, terms.GE]:
+            if self.zero_inequalities[i][0] in [terms.LE, terms.GE] and comp in [terms.LE, terms.GE]:
                 # learn equality
+                otc = terms.TermComparison(terms.IVar(i), self.zero_inequalities[i][0], 0,
+                                           self.zero_inequalities[i][1])
+                ntc = terms.TermComparison(terms.IVar(i), comp, 0, source)
                 del self.zero_inequalities[i]
-                self.assert_zero_equality(i)
+                self.assert_zero_equality(i, proofs.Proof('<= and >=', [otc, ntc]))
                 return
 
-        self.zero_inequalities[i] = comp
+        self.zero_inequalities[i] = (comp, source)
         new_zero_ineqs = []
         for j in (j for j in range(self.num_terms) if j != i):
             p = (i, j) if i < j else (j, i)
             old_comps = self.inequalities.get(p, [])
             if i < j:
-                new_comp = geometry.halfplane_of_comp(comp, 0)
+                new_comp = geometry.halfplane_of_comp(comp, 0, source)
             else:
                 new_comp = geometry.Halfplane((1 if comp in [terms.GE, terms.GT] else -1), 0,
-                                              (True if comp in [terms.LT, terms.GT] else False))
+                                              (True if comp in [terms.LT, terms.GT] else False),
+                                              source)
             cont = False
             for c in old_comps:
                 if c.eq_dir(new_comp) and c.strong is False and new_comp.strong is True:
@@ -627,7 +631,8 @@ class Blackboard(object):
 
         self.update_clause(i)
 
-    def assert_equality(self, i, coeff, j):
+    #todo : use source
+    def assert_equality(self, i, coeff, j, source=proofs.unknown):
         """
         Adds the equality "ti = coeff * tj"
         This should never be called directly; rather, assert_comparison should be used.
@@ -641,7 +646,7 @@ class Blackboard(object):
         self.tracker.update((i, j))
         self.update_clause(i, j)
 
-    def assert_zero_equality(self, i):
+    def assert_zero_equality(self, i, source=proofs.unknown):
         """
         Adds the equality "ti = 0"
         This should never be called directly; rather, assert_comparison should be used.
@@ -654,7 +659,8 @@ class Blackboard(object):
         self.update_clause(i)
         self.tracker.update(i)
 
-    def assert_disequality(self, i, coeff, j):
+    #todo: use source
+    def assert_disequality(self, i, coeff, j, source=proofs.unknown):
         """
         Adds the equality "ti != coeff * tj"
         This should never be called directly; rather, assert_comparison should be used.
@@ -685,7 +691,8 @@ class Blackboard(object):
             self.update_clause(i, j)
             self.tracker.update((i, j))
 
-    def assert_zero_disequality(self, i):
+    #todo: use source
+    def assert_zero_disequality(self, i, source=proofs.unknown):
         """
         Adds the equality "ti != 0"
         This should never be called directly; rather, assert_comparison should be used.
@@ -693,7 +700,7 @@ class Blackboard(object):
         self.announce_zero_comparison(i, terms.NE)
 
         if i in self.zero_inequalities:
-            comp = self.zero_inequalities[i]
+            comp = self.zero_inequalities[i][0]
             if comp == terms.LE:
                 self.assert_zero_inequality(i, terms.LT)
             elif comp == terms.GE:
@@ -704,6 +711,7 @@ class Blackboard(object):
         self.update_clause(i)
         self.tracker.update(i)
 
+    #todo: add source
     def assert_clause(self, *literals):
         """
         Takes a list of TermComparisons representing a disjunction.
@@ -772,7 +780,7 @@ class Blackboard(object):
         Returns 1 if ti > 0, -1 if ti < 0, 0 if = 0 or unknown
         """
         if i in self.zero_inequalities:
-            comp = self.zero_inequalities[i]
+            comp = self.zero_inequalities[i][0]
             if comp == terms.GT:
                 return 1
             elif comp == terms.LT:
@@ -784,7 +792,7 @@ class Blackboard(object):
         Returns 1 if ti >= 0, -1 if ti <= 0, 0 if = 0 or unknown
         """
         if i in self.zero_inequalities:
-            comp = self.zero_inequalities[i]
+            comp = self.zero_inequalities[i][0]
             if comp in (terms.GT, terms.GE):
                 return 1
             elif comp in (terms.LT, terms.LE):
@@ -804,7 +812,7 @@ class Blackboard(object):
             st += '{0!s} = 0\n'.format(terms.IVar(i))
 
         for i in self.zero_inequalities:
-            st += '{0!s} {1!s} 0\n'.format(terms.IVar(i), terms.comp_str[self.zero_inequalities[i]])
+            st += '{0!s} {1!s} 0\n'.format(terms.IVar(i), terms.comp_str[self.zero_inequalities[i][0]])
 
         for i in self.zero_disequalities:
             st += '{0!s} != 0\n'.format(terms.IVar(i))
@@ -837,7 +845,7 @@ class Blackboard(object):
             hp_comps = [geometry.halfplane_flip(hp) for hp in self.inequalities.get((j, i), [])]
     
         if i in self.zero_inequalities:
-            comp = self.zero_inequalities[i]
+            comp = self.zero_inequalities[i][0]
             if comp in [terms.GT, terms.GE]:
                 new_hp = geometry.Halfplane(0, -1, (True if comp == terms.GT else False))
             else:
@@ -845,7 +853,7 @@ class Blackboard(object):
             hp_comps = geometry.add_halfplane_comparison(new_hp, hp_comps)
     
         if j in self.zero_inequalities:
-            comp = self.zero_inequalities[j]
+            comp = self.zero_inequalities[j][0]
             if comp in [terms.GT, terms.GE]:
                 new_hp = geometry.Halfplane(-1, 0, (True if comp == terms.GT else False))
             else:
@@ -888,10 +896,10 @@ class Blackboard(object):
                 return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                 False, False, False)
             elif i in self.zero_inequalities:
-                if self.zero_inequalities[i] == terms.LT:
+                if self.zero_inequalities[i][0] == terms.LT:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                     True, True, True)
-                elif self.zero_inequalities[i] == terms.LE:
+                elif self.zero_inequalities[i][0] == terms.LE:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                     False, False, False)
                 else:
@@ -901,7 +909,7 @@ class Blackboard(object):
     
         if i in self.zero_equalities:
             if j in self.zero_inequalities:
-                comp = self.zero_inequalities[j]
+                comp = self.zero_inequalities[j][0]
                 if comp == terms.GT:
                     return geometry.ComparisonRange(geometry.Extended(0), geometry.infty,
                                                     False, True, True)
@@ -986,10 +994,10 @@ class Blackboard(object):
                 return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                 False, False, False)
             elif i in self.zero_inequalities:
-                if self.zero_inequalities[i] == terms.GT:
+                if self.zero_inequalities[i][0] == terms.GT:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                     True, True, True)
-                elif self.zero_inequalities[i] == terms.GE:
+                elif self.zero_inequalities[i][0] == terms.GE:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                     False, False, False)
                 else:
@@ -999,7 +1007,7 @@ class Blackboard(object):
     
         if i in self.zero_equalities:
             if j in self.zero_inequalities:
-                comp = self.zero_inequalities[j]
+                comp = self.zero_inequalities[j][0]
                 if comp == terms.GT:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.Extended(0),
                                                     True, True, False)
@@ -1060,10 +1068,10 @@ class Blackboard(object):
                 return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                 False, False, False)
             elif i in self.zero_inequalities:
-                if self.zero_inequalities[i] == terms.GT:
+                if self.zero_inequalities[i][0] == terms.GT:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                     True, True, True)
-                elif self.zero_inequalities[i] == terms.GE:
+                elif self.zero_inequalities[i][0] == terms.GE:
                     return geometry.ComparisonRange(geometry.neg_infty, geometry.infty,
                                                     False, False, False)
                 else:

@@ -295,15 +295,15 @@ def zero_equality_to_comparison(e):
     Converts an equation e == 0 to a blackboard comparison between IVars, or None if
     the equation is not of that form.
     """
-    l = len(e.args)
+    l = len(e.term.args)
     if l == 1:
-        t = summand_to_sterm(e.args[0])
+        t = summand_to_sterm(e.term.args[0])
         r = t == 0
         r.source = e.source
         return r
     elif l == 2:
-        t1 = summand_to_sterm(e.args[0])
-        t2 = summand_to_sterm(e.args[1])
+        t1 = summand_to_sterm(e.term.args[0])
+        t2 = summand_to_sterm(e.term.args[1])
         r = t1 == -t2
         r.source = e.source
         return r

@@ -1,3 +1,5 @@
+This is an experimental version of Polya, supporting proof tracing. It is neither complete nor official! Please see https://github.com/avigad/polya for the official release.
+
 The Polya Inequality Prover
 ===========================
 

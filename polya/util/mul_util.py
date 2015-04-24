@@ -257,7 +257,7 @@ def get_multiplicative_information(B):
                 terms.TermComparison(reduce_mul_term(B.term_defs[key]), terms.EQ, terms.IVar(key),
                                      proofs.Proof('definition of t{0}'.format(key), []))
             )
-
+    print comparisons
     return comparisons
 
 ####################################################################################################
@@ -297,7 +297,7 @@ def derive_info_from_definitions(B):
             return GT if B.implies(p.term.index, terms.NE, 0, 0) else GE
             # return 1 if B.sign(p.term.index) != 0 else 0
         else:
-            s = B.zero_inequalities.get(p.term.index, None)
+            s = B.zero_inequalities.get(p.term.index, (None, 0))[0]
             return comp_to_sign[s] if s is not None else 0
             # return B.sign(p.term.index)
 
@@ -314,6 +314,8 @@ def derive_info_from_definitions(B):
 
         if any((B.implies(p.term.index, terms.EQ, 0, 0) and p.exponent >= 0)
                for p in B.term_defs[key].args):  # This term is 0 * something else.
+            ac = (terms.IVar(key) == 0)
+            ac.source = proofs.Proof('Sign inference', )
             B.assert_comparison(terms.IVar(key) == 0)
 
         if B.implies(key, terms.NE, 0, 0) and all((p.exponent > 0 or
